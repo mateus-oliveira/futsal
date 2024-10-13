@@ -1,22 +1,31 @@
 using UnityEngine;
-using UnityEngine.AI;
 
 public class PlayerController : MonoBehaviour
 {
-    public bool isPlayerControlled;
     public float speed = 5f;
     public float sprintSpeed = 8f;
     public float passRange = 10f;
     public float shootRange = 15f;
-    public NavMeshAgent agent;
+    public float rotationSpeed = 720f; // Graus por segundo
+    private Rigidbody rb;
     private Animator animator;
-    [SerializeField] private Ball ball;
+    private Ball ballController;
+    [SerializeField] private bool isGoalkeeper, isPlayerControlled;
+    [SerializeField] private GameObject ball;
+
+    // Para IA
+    public Vector3 aiTargetPosition;
+    public float aiMoveThreshold = 0.5f;
+
+    // Limites da quadra
+    public Vector3 fieldMin, fieldMax;
 
     void Start()
     {
-        agent = GetComponent<NavMeshAgent>();
+        rb = GetComponent<Rigidbody>();
+        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
         animator = GetComponent<Animator>();
-        ball = FindObjectOfType<Ball>();
+        ballController = ball.GetComponent<Ball>();
     }
 
     void Update()
@@ -27,7 +36,7 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            HandleAI();
+            //HandleAI();
         }
     }
 
@@ -35,23 +44,22 @@ public class PlayerController : MonoBehaviour
     {
         float moveHorizontal = Input.GetAxis("Horizontal");
         float moveVertical = Input.GetAxis("Vertical");
-        Vector3 movement = new Vector3(moveHorizontal, 0.0f, moveVertical);
+        Vector3 movement = new Vector3(moveHorizontal, 0.0f, moveVertical).normalized;
+
+        float currentSpeed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : speed;
+
+        Vector3 velocity = movement * currentSpeed;
+        rb.velocity = new Vector3(velocity.x, rb.velocity.y, velocity.z);
 
         if (movement != Vector3.zero)
         {
-            agent.Move(movement * speed * Time.deltaTime);
-            animator.SetBool("isRunning", true);
+            //animator.SetBool("isRunning", true);
+            RotateTowards(movement);
         }
         else
         {
-            animator.SetBool("isRunning", false);
-        }
-
-        // Implementar comandos de passe, chute, defesa aqui
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            // Passe
-            Pass();
+            //animator.SetBool("isRunning", false);
+            rb.velocity = new Vector3(0, rb.velocity.y, 0);
         }
 
         if (Input.GetKeyDown(KeyCode.LeftControl))
@@ -59,27 +67,96 @@ public class PlayerController : MonoBehaviour
             // Chute
             Shoot();
         }
+
+        if (isGoalkeeper)
+        {
+            //Defend();
+        }
+    }
+
+    void RotateTowards(Vector3 direction)
+    {
+        Quaternion targetRotation = Quaternion.LookRotation(direction);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+    }
+
+    void Defend()
+    {
+        if (ball != null)
+        {
+            aiTargetPosition = ball.transform.position;
+            MoveTowards(aiTargetPosition);
+        }
     }
 
     void HandleAI()
     {
-        // Lógica de IA para movimentação, passe, chute, defesa
-        // Exemplo básico: seguir a bola
+        if (isGoalkeeper)
+        {
+            //Defend();
+            //return;
+        }
+
         if (ball != null)
         {
-            agent.SetDestination(ball.transform.position);
+            aiTargetPosition = ball.transform.position;
+            MoveTowards(aiTargetPosition);
         }
     }
 
-    void Pass()
+    void MoveTowards(Vector3 target)
     {
-        // Implementar lógica de passe
-        Debug.Log("Passe");
+        Vector3 direction = (target - transform.position).normalized;
+        Vector3 movement = direction * speed * Time.deltaTime;
+
+        Vector3 newPosition = transform.position + movement;
+
+        // Limitar a posiÃ§Ã£o dentro dos limites do campo
+        newPosition.x = Mathf.Clamp(newPosition.x, fieldMin.x, fieldMax.x);
+        newPosition.z = Mathf.Clamp(newPosition.z, fieldMin.z, fieldMax.z);
+
+        rb.MovePosition(newPosition);
+
+        if (Vector3.Distance(newPosition, target) < aiMoveThreshold)
+        {
+            rb.velocity = Vector3.zero;
+            //animator.SetBool("isRunning", false);
+            return;
+        }
+
+        //animator.SetBool("isRunning", true);
+        //Vector3 rotateDirection = new Vector3(0f, direction.y, 0f);
+        RotateTowards(direction);
     }
 
     void Shoot()
     {
-        // Implementar lógica de chute
-        Debug.Log("Chute");
+        // Verifica se a bola estÃ¡ prÃ³xima
+        if (Vector3.Distance(transform.position, ball.transform.position) <= shootRange)
+        {
+            // Implementar lÃ³gica de chute, por exemplo, aplicar forÃ§a na bola
+            Vector3 direction = (ball.transform.position - transform.position).normalized;
+            ballController.Kick(direction * 20f);
+            Debug.Log("Chute!");
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        // Garantir que o Rigidbody nÃ£o acumule velocidade indesejada
+        if (isPlayerControlled)
+        {
+            rb.velocity = new Vector3(rb.velocity.x, rb.velocity.y, rb.velocity.z);
+        }
+        else
+        {
+            rb.velocity = new Vector3(rb.velocity.x, rb.velocity.y, rb.velocity.z);
+        }
+    }
+
+
+    // Setters
+    public void SetIsPlayerControlled(bool isPlayerControlled){
+        this.isPlayerControlled = isPlayerControlled;
     }
 }
